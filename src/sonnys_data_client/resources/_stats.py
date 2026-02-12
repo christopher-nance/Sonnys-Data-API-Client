@@ -652,10 +652,12 @@ class StatsResource(BaseResource):
         """Compute all KPIs for a date range in a single call.
 
         Fetches v2 transactions, v1 ``type=wash``, v1 ``type=recurring``,
-        and verifies each plan sale candidate via ``get()`` to exclude
-        plan upgrades/switches.  Makes **3 bulk API calls** plus
+        clock entries for all employees, and verifies each plan sale
+        candidate via ``get()`` to exclude plan upgrades/switches.  Makes
+        **4 bulk API calls** (3 transaction + 1 employee list) plus
+        **N_employees x ceil(days/14) clock-entry calls** and
         **~N detail calls** (one per v2 plan sale candidate, typically
-        ~15/day) and computes every KPI locally.
+        ~15/day), then computes every KPI locally.
 
         Args:
             start: Range start as an ISO-8601 string (e.g. ``"2026-01-01"``)
@@ -666,7 +668,8 @@ class StatsResource(BaseResource):
         Returns:
             A :class:`~sonnys_data_client.types.StatsReport` containing
             ``sales``, ``washes``, ``new_memberships``, ``conversion``,
-            ``period_start``, and ``period_end``.
+            ``labor``, ``cost_per_car``, ``period_start``, and
+            ``period_end``.
 
         Raises:
             ValueError: If *start* is after *end*, or if a string cannot
@@ -679,6 +682,8 @@ class StatsResource(BaseResource):
             print(f"Washes: {rpt.washes.total}")
             print(f"New members: {rpt.new_memberships}")
             print(f"Conversion: {rpt.conversion.rate:.1%}")
+            print(f"Labor cost: ${rpt.labor.total_cost:.2f}")
+            print(f"Cost per car: ${rpt.cost_per_car.cost_per_car:.2f}")
         """
         # --- 1. Fetch data (3 bulk API calls + ~N get() calls) ---
         v2_transactions = self._fetch_transactions_v2(start, end)
@@ -692,6 +697,8 @@ class StatsResource(BaseResource):
         }
         # Verify plan sales via v1 get() to exclude upgrades/switches
         genuine_sale_ids = self._genuine_plan_sale_ids(v2_transactions)
+        # Fetch clock entries for labor cost computation
+        entries = self._fetch_all_clock_entries(start, end)
 
         # --- 2. Single-pass classification ---
         recurring_plan_sales = 0.0
@@ -773,7 +780,35 @@ class StatsResource(BaseResource):
             eligible_washes=eligible_wash_count,
         )
 
-        # --- 6. Resolve period dates from original inputs ---
+        # --- 6. LaborCostResult (single-pass over clock entries) ---
+        regular_cost = overtime_cost = regular_hours = overtime_hours = 0.0
+        for entry in entries:
+            regular_cost += entry.regular_rate * entry.regular_hours
+            overtime_cost += entry.overtime_rate * entry.overtime_hours
+            regular_hours += entry.regular_hours
+            overtime_hours += entry.overtime_hours
+        labor_total_cost = regular_cost + overtime_cost
+        labor_total_hours = regular_hours + overtime_hours
+
+        labor = LaborCostResult(
+            total_cost=labor_total_cost,
+            regular_cost=regular_cost,
+            overtime_cost=overtime_cost,
+            regular_hours=regular_hours,
+            overtime_hours=overtime_hours,
+            total_hours=labor_total_hours,
+            entry_count=len(entries),
+        )
+
+        # --- 7. CostPerCarResult ---
+        cpc_value = labor_total_cost / total_washes if total_washes > 0 else 0.0
+        cpc = CostPerCarResult(
+            cost_per_car=cpc_value,
+            total_labor_cost=labor_total_cost,
+            total_washes=total_washes,
+        )
+
+        # --- 8. Resolve period dates from original inputs ---
         period_start = start if isinstance(start, str) else start.date().isoformat()
         period_end = end if isinstance(end, str) else end.date().isoformat()
         if "T" in period_start:
@@ -781,12 +816,14 @@ class StatsResource(BaseResource):
         if "T" in period_end:
             period_end = period_end.split("T")[0]
 
-        # --- 7. Return unified report ---
+        # --- 9. Return unified report ---
         return StatsReport(
             sales=sales,
             washes=washes,
             new_memberships=new_memberships,
             conversion=conversion,
+            labor=labor,
+            cost_per_car=cpc,
             period_start=period_start,
             period_end=period_end,
         )
