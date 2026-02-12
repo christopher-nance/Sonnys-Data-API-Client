@@ -9,7 +9,7 @@ from sonnys_data_client._date_utils import build_date_chunks, parse_date_range
 from sonnys_data_client._resources import BaseResource
 from sonnys_data_client.types._employees import ClockEntry
 from sonnys_data_client.types._recurring import RecurringStatusChange
-from sonnys_data_client.types._stats import ConversionResult, LaborCostResult, SalesResult, StatsReport, WashResult
+from sonnys_data_client.types._stats import ConversionResult, CostPerCarResult, LaborCostResult, SalesResult, StatsReport, WashResult
 from sonnys_data_client.types._transactions import (
     TransactionListItem,
     TransactionV2ListItem,
@@ -600,6 +600,48 @@ class StatsResource(BaseResource):
             overtime_hours=overtime_hours,
             total_hours=total_hours,
             entry_count=len(entries),
+        )
+
+    def cost_per_car(
+        self,
+        start: str | datetime,
+        end: str | datetime,
+    ) -> CostPerCarResult:
+        """Compute labor cost per car for a date range.
+
+        Divides total labor cost by total wash volume to measure labor
+        efficiency.  A value of ``4.25`` means the site spent $4.25 in
+        labor for each car washed.  When there are zero washes the
+        result is ``0.0`` (division-by-zero safe).
+
+        Args:
+            start: Range start as an ISO-8601 string (e.g. ``"2026-01-01"``)
+                or :class:`~datetime.datetime`.
+            end: Range end as an ISO-8601 string or
+                :class:`~datetime.datetime`.
+
+        Returns:
+            A :class:`~sonnys_data_client.types.CostPerCarResult` containing
+            the cost per car, total labor cost, and total wash count.
+
+        Raises:
+            ValueError: If *start* is after *end*, or if a string cannot
+                be parsed as a valid ISO-8601 date/datetime.
+
+        Example::
+
+            result = client.stats.cost_per_car("2026-01-01", "2026-01-31")
+            print(f"Cost per car: ${result.cost_per_car:.2f}")
+            print(f"Labor cost: ${result.total_labor_cost:.2f}")
+            print(f"Total washes: {result.total_washes}")
+        """
+        labor = self.total_labor_cost(start, end)
+        washes = self.total_washes(start, end)
+        cpc = labor.total_cost / washes.total if washes.total > 0 else 0.0
+        return CostPerCarResult(
+            cost_per_car=cpc,
+            total_labor_cost=labor.total_cost,
+            total_washes=washes.total,
         )
 
     def report(
