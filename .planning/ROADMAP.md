@@ -28,7 +28,7 @@ Plans:
 **Plans**: TBD
 
 Plans:
-- [ ] 28-01: TBD
+- [x] 28-01: LaborCostResult and CostPerCarResult models
 
 #### Phase 29: Labor Cost Computation
 **Goal**: `total_labor_cost()` stats method computing regular + overtime cost from clock entries
@@ -182,7 +182,7 @@ Client-side business analytics via `client.stats.*` — six stat methods with ty
 | 25. Stats Report | v1.2 | 1/1 | Complete | 2026-02-11 |
 | 26. Stats Documentation & Testing | v1.2 | 1/1 | Complete | 2026-02-11 |
 | 27. Labor Data Layer | v1.3 | 2/2 | Complete | 2026-02-12 |
-| 28. Labor Cost Result Models | v1.3 | 0/? | Not started | - |
+| 28. Labor Cost Result Models | v1.3 | 1/1 | Complete | 2026-02-12 |
 | 29. Labor Cost Computation | v1.3 | 0/? | Not started | - |
 | 30. CPC Computation | v1.3 | 0/? | Not started | - |
 | 31. Report Integration | v1.3 | 0/? | Not started | - |
