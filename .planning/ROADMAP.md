@@ -73,7 +73,7 @@ Plans:
 **Plans**: TBD
 
 Plans:
-- [ ] 33-01: TBD
+- [x] 33-01: unit tests for labor data fetching and cost aggregation
 
 #### Phase 34: Validation & Deployment
 **Goal**: Validate against real JOLIET data, deploy docs to GitHub Pages
@@ -187,5 +187,5 @@ Client-side business analytics via `client.stats.*` — six stat methods with ty
 | 30. CPC Computation | v1.3 | 1/1 | Complete | 2026-02-12 |
 | 31. Report Integration | v1.3 | 1/1 | Complete | 2026-02-12 |
 | 32. Stats Guide Update | v1.3 | 1/1 | Complete | 2026-02-12 |
-| 33. Unit Tests | v1.3 | 0/? | Not started | - |
+| 33. Unit Tests | v1.3 | 1/1 | Complete | 2026-02-12 |
 | 34. Validation & Deployment | v1.3 | 0/? | Not started | - |
