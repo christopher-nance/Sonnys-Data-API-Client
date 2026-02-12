@@ -5,8 +5,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from sonnys_data_client._date_utils import parse_date_range
+from sonnys_data_client._date_utils import build_date_chunks, parse_date_range
 from sonnys_data_client._resources import BaseResource
+from sonnys_data_client.types._employees import ClockEntry
 from sonnys_data_client.types._recurring import RecurringStatusChange
 from sonnys_data_client.types._stats import ConversionResult, SalesResult, StatsReport, WashResult
 from sonnys_data_client.types._transactions import (
@@ -182,6 +183,61 @@ class StatsResource(BaseResource):
         return self._client.recurring.list_status_changes(
             **self._resolve_dates(start, end)
         )
+
+    def _fetch_all_clock_entries(
+        self,
+        start: str | datetime,
+        end: str | datetime,
+    ) -> list[ClockEntry]:
+        """Bulk-fetch clock entries across all employees for a date range.
+
+        Iterates every employee returned by ``employees.list()`` and
+        fetches their clock entries in 14-day windows (the API's hard
+        maximum per request).  All results are collected into a single
+        flat list and optionally filtered to only the entries matching
+        ``self._client.site_code``.
+
+        **API cost:** 1 call (employee list) +
+        N_employees x ceil(days / 14) calls (clock entries).
+
+        Site-code filtering is applied locally after fetching, because
+        the clock-entries endpoint does not support a site filter.
+
+        Args:
+            start: Range start as an ISO-8601 string (e.g. ``"2026-01-01"``)
+                or :class:`~datetime.datetime`.
+            end: Range end as an ISO-8601 string or
+                :class:`~datetime.datetime`.
+
+        Returns:
+            A flat list of :class:`ClockEntry` instances for the range.
+        """
+        # --- Resolve to YYYY-MM-DD strings (no timezone conversion) ---
+        start_str = start.isoformat()[:10] if isinstance(start, datetime) else start
+        if "T" in start_str:
+            start_str = start_str.split("T")[0]
+        end_str = end.isoformat()[:10] if isinstance(end, datetime) else end
+        if "T" in end_str:
+            end_str = end_str.split("T")[0]
+
+        chunks = build_date_chunks(start_str, end_str)
+        employees = self._client.employees.list()
+
+        all_entries: list[ClockEntry] = []
+        for emp in employees:
+            for chunk_start, chunk_end in chunks:
+                entries = self._client.employees.get_clock_entries(
+                    emp.employee_id,
+                    start_date=chunk_start,
+                    end_date=chunk_end,
+                )
+                all_entries.extend(entries)
+
+        # --- Filter by site_code locally ---
+        site_code = self._client.site_code
+        if site_code is not None:
+            return [e for e in all_entries if e.site_code == site_code]
+        return all_entries
 
     def _genuine_plan_sale_ids(
         self,
