@@ -64,7 +64,7 @@ Plans:
 **Plans**: TBD
 
 Plans:
-- [ ] 32-01: TBD
+- [x] 32-01: stats guide, API models, README documentation
 
 #### Phase 33: Unit Tests
 **Goal**: Tests for labor cost aggregation and CPC calculation
@@ -186,6 +186,6 @@ Client-side business analytics via `client.stats.*` — six stat methods with ty
 | 29. Labor Cost Computation | v1.3 | 1/1 | Complete | 2026-02-12 |
 | 30. CPC Computation | v1.3 | 1/1 | Complete | 2026-02-12 |
 | 31. Report Integration | v1.3 | 1/1 | Complete | 2026-02-12 |
-| 32. Stats Guide Update | v1.3 | 0/? | Not started | - |
+| 32. Stats Guide Update | v1.3 | 1/1 | Complete | 2026-02-12 |
 | 33. Unit Tests | v1.3 | 0/? | Not started | - |
 | 34. Validation & Deployment | v1.3 | 0/? | Not started | - |
