@@ -134,6 +134,10 @@ class StatsReport(SonnysModel):
             report period.
         conversion: Membership conversion rate KPI as a
             :class:`ConversionResult`.
+        labor: Labor cost breakdown (regular/overtime costs and hours)
+            as a :class:`LaborCostResult`.
+        cost_per_car: Labor cost per car KPI as a
+            :class:`CostPerCarResult`.
         period_start: ISO-8601 date string for the start of the report
             range (e.g. ``"2026-01-01"``).
         period_end: ISO-8601 date string for the end of the report
@@ -144,5 +148,7 @@ class StatsReport(SonnysModel):
     washes: WashResult
     new_memberships: int
     conversion: ConversionResult
+    labor: LaborCostResult
+    cost_per_car: CostPerCarResult
     period_start: str
     period_end: str
