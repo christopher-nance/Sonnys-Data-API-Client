@@ -177,6 +177,16 @@ print(customer.model_dump(by_alias=True))  # camelCase dict
       show_source: false
       heading_level: 3
 
+::: sonnys_data_client.types.LaborCostResult
+    options:
+      show_source: false
+      heading_level: 3
+
+::: sonnys_data_client.types.CostPerCarResult
+    options:
+      show_source: false
+      heading_level: 3
+
 ::: sonnys_data_client.types.StatsReport
     options:
       show_source: false

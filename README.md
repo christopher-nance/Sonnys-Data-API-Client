@@ -117,7 +117,7 @@ Credentials are sent as HTTP headers on every request:
 | `client.washbooks` | `list(**params)`, `get(id)` |
 | `client.recurring` | `list(**params)`, `get(id)`, `list_status_changes(**params)`, `list_modifications(**params)`, `list_details(**params)` |
 | `client.transactions` | `list(**params)`, `get(id)`, `list_by_type(item_type, **params)`, `list_v2(**params)`, `load_job(*, poll_interval, timeout, **params)` |
-| `client.stats` | `total_sales(start, end)`, `total_washes(start, end)`, `retail_wash_count(start, end)`, `new_memberships_sold(start, end)`, `conversion_rate(start, end)`, `report(start, end)` |
+| `client.stats` | `total_sales(start, end)`, `total_washes(start, end)`, `retail_wash_count(start, end)`, `new_memberships_sold(start, end)`, `conversion_rate(start, end)`, `total_labor_cost(start, end)`, `cost_per_car(start, end)`, `report(start, end)` |
 
 All `list()` methods auto-paginate by default -- every page is fetched
 transparently and the complete result set is returned. Common query parameters
@@ -301,7 +301,7 @@ transaction detail plus v2 enrichment fields.
 
 ### Stats
 
-**Methods:** `total_sales(start, end)` | `total_washes(start, end)` | `retail_wash_count(start, end)` | `new_memberships_sold(start, end)` | `conversion_rate(start, end)` | `report(start, end)`
+**Methods:** `total_sales(start, end)` | `total_washes(start, end)` | `retail_wash_count(start, end)` | `new_memberships_sold(start, end)` | `conversion_rate(start, end)` | `total_labor_cost(start, end)` | `cost_per_car(start, end)` | `report(start, end)`
 
 Unlike other resources that wrap REST endpoints directly, `client.stats`
 computes business analytics by fetching raw data and aggregating it locally.
@@ -319,10 +319,19 @@ print(f"Total washes: {washes.total}, Member: {washes.member_wash_count}")
 rate = client.stats.conversion_rate("2026-01-01", "2026-01-31")
 print(f"Conversion: {rate.rate:.1%}")
 
-# All KPIs in one call (3 bulk + ~N detail calls)
+# Labor cost breakdown
+labor = client.stats.total_labor_cost("2026-01-01", "2026-01-31")
+print(f"Labor: ${labor.total_cost:.2f} ({labor.total_hours:.1f}h)")
+
+# Cost per car
+cpc = client.stats.cost_per_car("2026-01-01", "2026-01-31")
+print(f"Cost per car: ${cpc.cost_per_car:.2f}")
+
+# All KPIs in one call (4 bulk + clock entries + ~N detail calls)
 rpt = client.stats.report("2026-01-01", "2026-01-31")
 print(f"Revenue: ${rpt.sales.total:.2f}, Washes: {rpt.washes.total}")
 print(f"New members: {rpt.new_memberships}, Conversion: {rpt.conversion.rate:.1%}")
+print(f"Labor: ${rpt.labor.total_cost:.2f}, Cost/car: ${rpt.cost_per_car.cost_per_car:.2f}")
 ```
 
 **Returns:** `SalesResult` from `total_sales()` -- fields include `total`,
@@ -330,9 +339,13 @@ print(f"New members: {rpt.new_memberships}, Conversion: {rpt.conversion.rate:.1%
 -- fields include `total`, `retail_wash_count`, `member_wash_count`,
 `eligible_wash_count`, `free_wash_count`. `int` from `retail_wash_count()` and
 `new_memberships_sold()`. `ConversionResult` from `conversion_rate()` -- fields
-include `rate`, `new_memberships`, `eligible_washes`. `StatsReport` from
+include `rate`, `new_memberships`, `eligible_washes`. `LaborCostResult` from
+`total_labor_cost()` -- fields include `total_cost`, `regular_cost`,
+`overtime_cost`, `regular_hours`, `overtime_hours`, `total_hours`,
+`entry_count`. `CostPerCarResult` from `cost_per_car()` -- fields include
+`cost_per_car`, `total_labor_cost`, `total_washes`. `StatsReport` from
 `report()` -- bundles `sales`, `washes`, `new_memberships`, `conversion`,
-`period_start`, `period_end`.
+`labor`, `cost_per_car`, `period_start`, `period_end`.
 
 ## Error Handling
 

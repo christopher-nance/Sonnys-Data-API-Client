@@ -39,7 +39,7 @@ yourself.
 
 ## Choosing the Right Method
 
-The stats resource offers six methods. Pick the one that matches your use case:
+The stats resource offers eight methods. Pick the one that matches your use case:
 
 | Method | Returns | Description | API Calls |
 |--------|---------|-------------|-----------|
@@ -48,7 +48,9 @@ The stats resource offers six methods. Pick the one that matches your use case:
 | `retail_wash_count(start, end)` | `int` | Count of retail wash transactions | 2 |
 | `new_memberships_sold(start, end)` | `int` | Count of genuine new membership sales | 1 + ~N |
 | `conversion_rate(start, end)` | `ConversionResult` | Membership conversion rate KPI | 4 + ~N |
-| `report(start, end)` | `StatsReport` | All KPIs in a single call (most efficient) | 3 + ~N |
+| `total_labor_cost(start, end)` | `LaborCostResult` | Labor cost breakdown (regular/overtime) from clock entries | N_emp x ceil(days/14) + 1 |
+| `cost_per_car(start, end)` | `CostPerCarResult` | Labor cost per car washed | N_emp x ceil(days/14) + 4 |
+| `report(start, end)` | `StatsReport` | All KPIs in a single call (most efficient) | 4 + N_emp x ceil(days/14) + ~N |
 
 Where **~N** is the number of v2 plan sale candidates verified via `get()`
 (typically ~15/day).  This verification excludes plan upgrades/switches from
@@ -194,12 +196,69 @@ When there are zero eligible washes the rate is `0.0` (division-by-zero safe).
 | `new_memberships` | `int` | Number of genuine new membership sales |
 | `eligible_washes` | `int` | Eligible washes (denominator) |
 
+### `total_labor_cost(start, end) -> LaborCostResult`
+
+Compute labor cost breakdown for a date range. Fetches clock entries for all
+employees via a 14-day windowed bulk fetch (the API's hard maximum per
+request), then aggregates regular and overtime costs in a single pass. Each
+entry's cost is computed as `rate * hours` for the corresponding pay type.
+Site-code filtering is applied locally after fetching, because the
+clock-entries endpoint does not support a site filter.
+
+```python
+result = client.stats.total_labor_cost("2026-01-01", "2026-01-31")
+
+print(f"Total labor cost: ${result.total_cost:.2f}")
+print(f"Regular: ${result.regular_cost:.2f} ({result.regular_hours:.1f}h)")
+print(f"Overtime: ${result.overtime_cost:.2f} ({result.overtime_hours:.1f}h)")
+print(f"Total hours: {result.total_hours:.1f}")
+print(f"Clock entries: {result.entry_count}")
+```
+
+**`LaborCostResult` fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `total_cost` | `float` | Combined regular and overtime cost |
+| `regular_cost` | `float` | Sum of `regular_rate * regular_hours` across all entries |
+| `overtime_cost` | `float` | Sum of `overtime_rate * overtime_hours` across all entries |
+| `regular_hours` | `float` | Total regular hours worked |
+| `overtime_hours` | `float` | Total overtime hours worked |
+| `total_hours` | `float` | Combined hours (`regular_hours + overtime_hours`) |
+| `entry_count` | `int` | Number of clock entries aggregated |
+
+### `cost_per_car(start, end) -> CostPerCarResult`
+
+Compute labor cost per car for a date range. Divides total labor cost by total
+wash volume to measure labor efficiency. A value of `4.25` means the site spent
+$4.25 in labor for each car washed. When there are zero washes the result is
+`0.0` (division-by-zero safe).
+
+```python
+result = client.stats.cost_per_car("2026-01-01", "2026-01-31")
+
+print(f"Cost per car: ${result.cost_per_car:.2f}")
+print(f"Total labor cost: ${result.total_labor_cost:.2f}")
+print(f"Total washes: {result.total_washes}")
+```
+
+**`CostPerCarResult` fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `cost_per_car` | `float` | Total labor cost divided by total washes (`0.0` when no washes) |
+| `total_labor_cost` | `float` | Aggregate labor cost from `LaborCostResult` |
+| `total_washes` | `int` | Wash count from `WashResult` |
+
 ### `report(start, end) -> StatsReport`
 
-Compute all KPIs for a date range in a single call. Makes **3 bulk API calls**
-plus **~N detail calls** (one per plan sale candidate, typically ~15/day) to
-verify memberships.  This is far more efficient than calling each method
-individually, which would duplicate bulk fetches and detail lookups.
+Compute all KPIs for a date range in a single call, including sales, washes,
+memberships, conversion rate, labor costs, and cost per car. Makes **4 bulk
+API calls** (3 transaction + 1 employee list) plus **N_emp x ceil(days/14)
+clock-entry calls** and **~N detail calls** (one per plan sale candidate,
+typically ~15/day) to verify memberships. This is far more efficient than
+calling each method individually, which would duplicate bulk fetches, clock
+entry iterations, and detail lookups.
 
 ```python
 rpt = client.stats.report("2026-01-01", "2026-01-31")
@@ -210,6 +269,8 @@ print(f"Washes: {rpt.washes.total} (member: {rpt.washes.member_wash_count}, reta
 print(f"Eligible: {rpt.washes.eligible_wash_count}, Free: {rpt.washes.free_wash_count}")
 print(f"New memberships: {rpt.new_memberships}")
 print(f"Conversion rate: {rpt.conversion.rate:.1%}")
+print(f"Labor cost: ${rpt.labor.total_cost:.2f}")
+print(f"Cost per car: ${rpt.cost_per_car.cost_per_car:.2f}")
 ```
 
 **`StatsReport` fields:**
@@ -220,6 +281,8 @@ print(f"Conversion rate: {rpt.conversion.rate:.1%}")
 | `washes` | `WashResult` | Wash volume breakdown (see `total_washes()` above) |
 | `new_memberships` | `int` | Count of recurring plan sales |
 | `conversion` | `ConversionResult` | Conversion rate KPI (see `conversion_rate()` above) |
+| `labor` | `LaborCostResult` | Labor cost breakdown (see `total_labor_cost()` above) |
+| `cost_per_car` | `CostPerCarResult` | Labor cost per car KPI (see `cost_per_car()` above) |
 | `period_start` | `str` | ISO-8601 date string for start of report range |
 | `period_end` | `str` | ISO-8601 date string for end of report range |
 
@@ -245,6 +308,10 @@ with SonnysClient(api_id="your-api-id", api_key="your-api-key",
     print(f"  Free:        {rpt.washes.free_wash_count:>10,}")
     print(f"New members:   {rpt.new_memberships:>10,}")
     print(f"Conversion:    {rpt.conversion.rate:>9.1%}")
+    print(f"Labor:         ${rpt.labor.total_cost:>10,.2f}")
+    print(f"  Regular:     ${rpt.labor.regular_cost:>10,.2f}")
+    print(f"  Overtime:    ${rpt.labor.overtime_cost:>10,.2f}")
+    print(f"Cost/car:      ${rpt.cost_per_car.cost_per_car:>10.2f}")
 ```
 
 ### Compare two periods
@@ -300,6 +367,15 @@ with SonnysClient(api_id="your-api-id", api_key="your-api-key",
     If you only need one stat, calling the individual method is more efficient
     than `report()`. For example, `total_sales()` makes just **1 API call**,
     while `report()` always makes 3 + ~N.
+
+!!! warning "Clock entry API cost"
+    Fetching clock entries requires **1 employee list call** plus
+    **N_employees x ceil(days/14) clock entry calls**. For 20 employees over
+    31 days, that is 1 + 20 x 3 = **61 API calls**. Use `report()` when you
+    need labor data alongside other KPIs -- it shares the clock entry fetch
+    with all other computations. For labor-only queries,
+    `total_labor_cost()` is sufficient and avoids the extra transaction
+    fetches.
 
 !!! note "No caching between calls"
     Stats methods do not cache results between calls. Each invocation fetches
