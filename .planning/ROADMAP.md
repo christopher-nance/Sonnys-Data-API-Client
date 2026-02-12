@@ -37,7 +37,7 @@ Plans:
 **Plans**: TBD
 
 Plans:
-- [ ] 29-01: TBD
+- [x] 29-01: total_labor_cost() implementation + package exports
 
 #### Phase 30: CPC Computation
 **Goal**: `cost_per_car()` stats method: labor cost / total washes with zero-division safety
@@ -183,7 +183,7 @@ Client-side business analytics via `client.stats.*` — six stat methods with ty
 | 26. Stats Documentation & Testing | v1.2 | 1/1 | Complete | 2026-02-11 |
 | 27. Labor Data Layer | v1.3 | 2/2 | Complete | 2026-02-12 |
 | 28. Labor Cost Result Models | v1.3 | 1/1 | Complete | 2026-02-12 |
-| 29. Labor Cost Computation | v1.3 | 0/? | Not started | - |
+| 29. Labor Cost Computation | v1.3 | 1/1 | Complete | 2026-02-12 |
 | 30. CPC Computation | v1.3 | 0/? | Not started | - |
 | 31. Report Integration | v1.3 | 0/? | Not started | - |
 | 32. Stats Guide Update | v1.3 | 0/? | Not started | - |
