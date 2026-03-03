@@ -1502,6 +1502,17 @@ to UTC.  If <code>start</code> is after <code>end</code>, a <code>ValueError</co
 <p>Compute a revenue breakdown for a date range. Fetches all transactions via the
 enriched v2 endpoint and categorizes them into three buckets: recurring plan
 sales, recurring redemptions, and retail.</p>
+<p>The <code>total</code> and <code>count</code> fields <strong>exclude</strong> membership redemptions
+(<code>is_recurring_plan_redemption=True</code>), since redemptions are usage events that
+do not generate revenue.  Redemption data is still tracked in the
+<code>recurring_redemptions</code> and <code>recurring_redemptions_count</code> breakdown fields.</p>
+<div class="admonition info">
+<p class="admonition-title">Alignment with Sonny's Back Office</p>
+<p><code>total</code> is designed to align with the Sonny's Back Office <em>Transaction
+Total</em>.  It may be slightly higher (&lt;1%) due to customer overpayments --
+the API includes overpaid amounts in transaction totals, while Back Office
+tracks them as a separate "Over Paid" line item.</p>
+</div>
 <div class="highlight"><pre><span></span><code><span class="n">result</span> <span class="o">=</span> <span class="n">client</span><span class="o">.</span><span class="n">stats</span><span class="o">.</span><span class="n">total_sales</span><span class="p">(</span><span class="s2">&quot;2026-01-01&quot;</span><span class="p">,</span> <span class="s2">&quot;2026-01-31&quot;</span><span class="p">)</span>
 
 <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Total revenue: $</span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">total</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">count</span><span class="si">}</span><span class="s2"> transactions)&quot;</span><span class="p">)</span>
@@ -1522,12 +1533,12 @@ sales, recurring redemptions, and retail.</p>
 <tr>
 <td><code>total</code></td>
 <td><code>float</code></td>
-<td>Grand total revenue</td>
+<td>Revenue total (plan sales + retail, excludes redemptions)</td>
 </tr>
 <tr>
 <td><code>count</code></td>
 <td><code>int</code></td>
-<td>Total transaction count</td>
+<td>Transaction count (plan sales + retail, excludes redemptions)</td>
 </tr>
 <tr>
 <td><code>recurring_plan_sales</code></td>
@@ -1542,12 +1553,12 @@ sales, recurring redemptions, and retail.</p>
 <tr>
 <td><code>recurring_redemptions</code></td>
 <td><code>float</code></td>
-<td>Revenue from recurring redemptions</td>
+<td>Gross value of recurring redemptions (not included in <code>total</code>)</td>
 </tr>
 <tr>
 <td><code>recurring_redemptions_count</code></td>
 <td><code>int</code></td>
-<td>Number of recurring redemption transactions</td>
+<td>Number of recurring redemption transactions (not included in <code>count</code>)</td>
 </tr>
 <tr>
 <td><code>retail</code></td>

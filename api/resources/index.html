@@ -3465,8 +3465,20 @@ print(f&quot;New memberships sold: {count}&quot;)
 <p>Fetches all transactions via the enriched v2 endpoint and
 categorizes them into three buckets: recurring plan sales,
 recurring redemptions, and retail.  Returns a
-:class:<code>~sonnys_data_client.types.SalesResult</code> with grand totals
-and per-bucket revenue and count.</p>
+:class:<code>~sonnys_data_client.types.SalesResult</code> with per-bucket
+breakdowns.</p>
+<p>The <code>total</code> and <code>count</code> fields <strong>exclude</strong> membership
+redemptions (<code>is_recurring_plan_redemption=True</code>), since
+redemptions are $0-value usage events that do not generate
+revenue.  Redemption data is still available in the
+<code>recurring_redemptions</code> and <code>recurring_redemptions_count</code>
+breakdown fields.</p>
+<p>.. note::</p>
+<p>The <code>total</code> may be slightly higher than the Sonny's Back
+   Office <em>Transaction Total</em> due to customer overpayments.  The
+   API includes overpaid amounts in transaction totals, while
+   Back Office tracks them as a separate line item.  The typical
+   difference is &lt;1%.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -3543,7 +3555,7 @@ or :class:<code>~datetime.datetime</code>.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>the grand total, transaction count, and per-category</p>
+                <p>the grand total (excluding redemptions), transaction count,</p>
               </div>
             </td>
           </tr>
@@ -3553,7 +3565,7 @@ or :class:<code>~datetime.datetime</code>.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>breakdowns.</p>
+                <p>and per-category breakdowns.</p>
               </div>
             </td>
           </tr>
@@ -4187,6 +4199,9 @@ candidate via <code>get()</code> to exclude plan upgrades/switches.  Makes
 <strong>N_employees x ceil(days/14) clock-entry calls</strong> and
 <strong>~N detail calls</strong> (one per v2 plan sale candidate, typically
 ~15/day), then computes every KPI locally.</p>
+<p>The <code>sales.total</code> field <strong>excludes</strong> membership redemptions
+to align with the Sonny's Back Office <em>Transaction Total</em>.  See
+:meth:<code>total_sales</code> for details.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
