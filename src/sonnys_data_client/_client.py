@@ -152,8 +152,6 @@ class SonnysClient:
             RateLimitError: When 429 retries are exhausted.
             APIStatusError: On other HTTP error status codes.
         """
-        base_delay = 1.0
-
         for attempt in range(self._max_retries + 1):
             # Step 1: Rate limit check
             wait = self._rate_limiter.acquire()
@@ -192,12 +190,12 @@ class SonnysClient:
             # Step 6: Handle 429
             if response.status_code == 429:
                 if attempt < self._max_retries:
+                    delay = 2.0 * (attempt + 1)
                     logger.warning(
                         "Rate limited (429), retry %d/%d after %.1fs",
-                        attempt + 1, self._max_retries,
-                        base_delay * (2 ** attempt),
+                        attempt + 1, self._max_retries, delay,
                     )
-                    time.sleep(base_delay * (2**attempt))
+                    time.sleep(delay)
                     continue
                 raise make_status_error(response)
 
