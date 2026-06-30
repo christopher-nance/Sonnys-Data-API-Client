@@ -312,7 +312,7 @@ transaction detail plus v2 enrichment fields.
 
 ### Stats
 
-**Methods:** `total_sales(start, end)` | `total_washes(start, end)` | `retail_wash_count(start, end)` | `new_memberships_sold(start, end)` | `conversion_rate(start, end)` | `total_labor_cost(start, end)` | `cost_per_car(start, end)` | `report(start, end)`
+**Methods:** `total_sales(start, end)` | `total_washes(start, end)` | `retail_wash_count(start, end)` | `new_memberships_sold(start, end, *, exclude_ecomm=False)` | `conversion_rate(start, end, *, exclude_ecomm=False)` | `total_labor_cost(start, end)` | `cost_per_car(start, end)` | `report(start, end, *, exclude_ecomm=False)`
 
 Unlike other resources that wrap REST endpoints directly, `client.stats`
 computes business analytics by fetching raw data and aggregating it locally.
@@ -329,6 +329,11 @@ print(f"Total washes: {washes.total}, Member: {washes.member_wash_count}")
 
 rate = client.stats.conversion_rate("2026-01-01", "2026-01-31")
 print(f"Conversion: {rate.rate:.1%}")
+
+# In-lane conversion only -- excludes online (E-Comm) sign-ups from the
+# new-membership numerator (matched via "E-Comm" in salesDeviceName)
+in_lane = client.stats.conversion_rate("2026-01-01", "2026-01-31", exclude_ecomm=True)
+print(f"In-lane conversion: {in_lane.rate:.1%}")
 
 # Labor cost breakdown
 labor = client.stats.total_labor_cost("2026-01-01", "2026-01-31")

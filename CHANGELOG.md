@@ -2,6 +2,30 @@
 
 All notable changes to `sonnys-data-client` are documented in this file.
 
+## 1.6.0
+
+### Added
+
+- **`exclude_ecomm` flag on conversion metrics.** `client.stats.conversion_rate()`,
+  `client.stats.new_memberships_sold()`, and `client.stats.report()` now accept
+  a keyword-only `exclude_ecomm` parameter (default `False`). When set to
+  `True`, membership sign-ups made on an E-Comm (online) terminal are excluded
+  from the new-membership count (the conversion *numerator*). E-Comm terminals
+  are identified by the `"E-Comm"` marker in the transaction's `salesDeviceName`
+  (matched case-insensitively), which is present on every site's online
+  terminal. This isolates *in-lane* conversion performance from online sign-ups.
+- The exclusion adds **no extra API calls**: `salesDeviceName` is read from the
+  transaction detail record that is already fetched to verify each plan sale.
+
+### Notes
+
+- The conversion **denominator** (eligible washes) is intentionally left
+  unchanged by `exclude_ecomm`, because E-Comm terminals do not perform in-lane
+  car washes — so online activity does not inflate the wash count. The flag
+  therefore only affects the numerator and the resulting rate.
+- Backwards compatible: existing call sites and the default behavior are
+  unchanged (online sign-ups are still counted unless `exclude_ecomm=True`).
+
 ## 1.5.1
 
 ### Fixed

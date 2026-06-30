@@ -48,11 +48,11 @@ The stats resource offers eight methods. Pick the one that matches your use case
 | `total_sales(start, end)` | `SalesResult` | Revenue breakdown by category (recurring, retail) | 1 |
 | `total_washes(start, end)` | `WashResult` | Wash volume breakdown (member, retail, eligible, free) | 2 |
 | `retail_wash_count(start, end)` | `int` | Count of retail wash transactions | 2 |
-| `new_memberships_sold(start, end)` | `int` | Count of genuine new membership sales | 1 + ~N |
-| `conversion_rate(start, end)` | `ConversionResult` | Membership conversion rate KPI | 3 + ~N |
+| `new_memberships_sold(start, end, *, exclude_ecomm=False)` | `int` | Count of genuine new membership sales | 1 + ~N |
+| `conversion_rate(start, end, *, exclude_ecomm=False)` | `ConversionResult` | Membership conversion rate KPI | 3 + ~N |
 | `total_labor_cost(start, end)` | `LaborCostResult` | Labor cost breakdown (regular/overtime) from clock entries | N_emp x ceil(days/14) + 1 |
 | `cost_per_car(start, end)` | `CostPerCarResult` | Labor cost per car washed | N_emp x ceil(days/14) + 3 |
-| `report(start, end)` | `StatsReport` | All KPIs in a single call (most efficient) | 3 + N_emp x ceil(days/14) + ~N |
+| `report(start, end, *, exclude_ecomm=False)` | `StatsReport` | All KPIs in a single call (most efficient) | 3 + N_emp x ceil(days/14) + ~N |
 
 Where **~N** is the number of v2 plan sale candidates verified via `get()`
 (typically ~15/day).  This verification excludes plan upgrades/switches from
@@ -186,7 +186,16 @@ count = client.stats.new_memberships_sold("2026-01-01", "2026-01-31")
 print(f"New memberships sold: {count}")
 ```
 
-### `conversion_rate(start, end) -> ConversionResult` ![API](https://img.shields.io/badge/source-API-1976d2)
+Pass `exclude_ecomm=True` to drop online (E-Comm) sign-ups from the count — see
+[Excluding E-Comm (online) sign-ups](#excluding-e-comm-online-sign-ups) below.
+
+```python
+in_lane = client.stats.new_memberships_sold(
+    "2026-01-01", "2026-01-31", exclude_ecomm=True
+)
+```
+
+### `conversion_rate(start, end, *, exclude_ecomm=False) -> ConversionResult` ![API](https://img.shields.io/badge/source-API-1976d2)
 
 Compute the membership conversion rate for a date range. Measures how
 effectively a site converts eligible wash customers into membership sign-ups.
@@ -205,6 +214,9 @@ print(f"Eligible washes: {result.eligible_washes}")
 
 When there are zero eligible washes the rate is `0.0` (division-by-zero safe).
 
+Pass `exclude_ecomm=True` to measure **in-lane** conversion only — see
+[Excluding E-Comm (online) sign-ups](#excluding-e-comm-online-sign-ups) below.
+
 **`ConversionResult` fields:**
 
 | Field | Type | Description |
@@ -212,6 +224,51 @@ When there are zero eligible washes the rate is `0.0` (division-by-zero safe).
 | `rate` | `float` | Conversion rate as a decimal (e.g. `0.15` = 15%) |
 | `new_memberships` | `int` | Number of genuine new membership sales |
 | `eligible_washes` | `int` | Eligible washes (denominator) |
+
+#### Excluding E-Comm (online) sign-ups
+
+By default, `conversion_rate()` counts **every** genuine new membership,
+including those purchased online through an E-Comm terminal. Because online
+sign-ups are not the result of in-lane staff converting a wash customer, they
+can make a site's conversion look better than its on-site performance actually
+was.
+
+Pass `exclude_ecomm=True` to exclude them:
+
+```python
+# All sign-ups (default)
+overall = client.stats.conversion_rate("2026-01-01", "2026-01-31")
+
+# In-lane sign-ups only — drops online (E-Comm) memberships
+in_lane = client.stats.conversion_rate(
+    "2026-01-01", "2026-01-31", exclude_ecomm=True
+)
+
+print(f"Overall:  {overall.rate:.1%} ({overall.new_memberships} members)")
+print(f"In-lane:  {in_lane.rate:.1%} ({in_lane.new_memberships} members)")
+```
+
+How it works:
+
+- **What counts as E-Comm.** A membership sale is treated as E-Comm when the
+  transaction's `salesDeviceName` contains the string `"E-Comm"` (matched
+  case-insensitively). Every site's online terminal carries this marker, so the
+  same flag works across all sites.
+- **Numerator only.** The flag removes E-Comm sign-ups from the
+  **`new_memberships`** count (the conversion numerator). The denominator —
+  **`eligible_washes`** — is left unchanged, because E-Comm terminals do not
+  perform in-lane car washes and therefore never inflate the wash count.
+- **No extra API calls.** The device name is read from the transaction detail
+  record that `conversion_rate()` already fetches to verify each plan sale, so
+  enabling the flag does not add any requests.
+
+The same `exclude_ecomm=True` keyword is accepted by `new_memberships_sold()`
+and `report()`, which apply the identical numerator-only exclusion.
+
+!!! note
+    `exclude_ecomm` only affects the membership/conversion figures. Revenue
+    (`total_sales()` / `report().sales`) and wash volume (`total_washes()` /
+    `report().washes`) are reported in full regardless of the flag.
 
 ### `total_labor_cost(start, end) -> LaborCostResult` ![API](https://img.shields.io/badge/source-API-1976d2)
 
@@ -267,7 +324,7 @@ print(f"Total washes: {result.total_washes}")
 | `total_labor_cost` | `float` | Aggregate labor cost from `LaborCostResult` |
 | `total_washes` | `int` | Wash count from `WashResult` |
 
-### `report(start, end) -> StatsReport` ![API](https://img.shields.io/badge/source-API-1976d2)
+### `report(start, end, *, exclude_ecomm=False) -> StatsReport` ![API](https://img.shields.io/badge/source-API-1976d2)
 
 Compute all KPIs for a date range in a single call, including sales, washes,
 memberships, conversion rate, labor costs, and cost per car. Makes **4 bulk
@@ -276,6 +333,11 @@ clock-entry calls** and **~N detail calls** (one per plan sale candidate,
 typically ~15/day) to verify memberships. This is far more efficient than
 calling each method individually, which would duplicate bulk fetches, clock
 entry iterations, and detail lookups.
+
+Pass `exclude_ecomm=True` to exclude online (E-Comm) sign-ups from
+`new_memberships` and the `conversion` KPI — the `sales` and `washes`
+breakdowns are unaffected. See
+[Excluding E-Comm (online) sign-ups](#excluding-e-comm-online-sign-ups).
 
 ```python
 rpt = client.stats.report("2026-01-01", "2026-01-31")
