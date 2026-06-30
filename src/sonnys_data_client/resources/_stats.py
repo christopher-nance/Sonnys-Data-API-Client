@@ -19,6 +19,32 @@ if TYPE_CHECKING:
     from sonnys_data_client._client import SonnysClient
 
 
+# E-Comm (online) terminals across every site carry this marker in their
+# ``salesDeviceName`` (e.g. "E-Comm 1", "MAIN E-Comm").  Used to optionally
+# exclude online membership sales from conversion metrics.  Matched
+# case-insensitively so casing variations are still recognized.
+_ECOMM_DEVICE_MARKER = "e-comm"
+
+
+def _is_ecomm_device(sales_device_name: str | None) -> bool:
+    """Return ``True`` if a device name identifies an E-Comm terminal.
+
+    Every site's E-Comm (online) terminal contains the ``"E-Comm"`` marker
+    in its ``salesDeviceName``.  The match is case-insensitive.  A missing
+    or empty device name is treated as *not* E-Comm.
+
+    Args:
+        sales_device_name: The ``salesDeviceName`` of a transaction (from
+            the transaction detail / get-job-data payload), or ``None``.
+
+    Returns:
+        ``True`` when the name contains the E-Comm marker, else ``False``.
+    """
+    if not sales_device_name:
+        return False
+    return _ECOMM_DEVICE_MARKER in sales_device_name.casefold()
+
+
 class StatsResource(BaseResource):
     """Access computed business analytics and KPIs.
 
@@ -250,6 +276,8 @@ class StatsResource(BaseResource):
     def _genuine_plan_sale_ids(
         self,
         v2_transactions: list[TransactionV2ListItem],
+        *,
+        exclude_ecomm: bool = False,
     ) -> set[str]:
         """Identify genuine new membership sales from v2 plan sale candidates.
 
@@ -259,20 +287,34 @@ class StatsResource(BaseResource):
         on each candidate to check the v1 ``is_recurring_sale`` flag, which
         is ``True`` only for genuine new sales.
 
+        When *exclude_ecomm* is ``True``, sales made on an E-Comm (online)
+        terminal are dropped as well.  The terminal is identified from the
+        detail record's ``sales_device_name`` (see :func:`_is_ecomm_device`),
+        which is already fetched for every candidate — so the exclusion adds
+        no additional API calls.
+
         Args:
             v2_transactions: The full v2 transaction list for the date range.
+            exclude_ecomm: When ``True``, exclude sales whose
+                ``sales_device_name`` identifies an E-Comm terminal.
 
         Returns:
             A set of ``trans_id`` values for genuine new membership sales
-            (excluding plan upgrades/switches).
+            (excluding plan upgrades/switches, and — when *exclude_ecomm*
+            is set — E-Comm terminal sales).
         """
         genuine_ids: set[str] = set()
         for txn in v2_transactions:
             if not txn.is_recurring_plan_sale:
                 continue
             detail = self._client.transactions.get(txn.trans_id)
-            if getattr(detail, "is_recurring_sale", False):
-                genuine_ids.add(txn.trans_id)
+            if not getattr(detail, "is_recurring_sale", False):
+                continue
+            if exclude_ecomm and _is_ecomm_device(
+                getattr(detail, "sales_device_name", None)
+            ):
+                continue
+            genuine_ids.add(txn.trans_id)
         return genuine_ids
 
     def retail_wash_count(
@@ -318,6 +360,8 @@ class StatsResource(BaseResource):
         self,
         start: str | datetime,
         end: str | datetime,
+        *,
+        exclude_ecomm: bool = False,
     ) -> int:
         """Count new membership sales for a date range.
 
@@ -331,6 +375,12 @@ class StatsResource(BaseResource):
                 or :class:`~datetime.datetime`.
             end: Range end as an ISO-8601 string or
                 :class:`~datetime.datetime`.
+            exclude_ecomm: When ``True``, exclude memberships sold on an
+                E-Comm (online) terminal — any sale whose
+                ``salesDeviceName`` contains ``"E-Comm"``.  Defaults to
+                ``False`` (online sales are counted).  Adds no extra API
+                calls: the device name is read from the detail record
+                already fetched to verify each sale.
 
         Returns:
             The number of genuine new membership sales in the date range.
@@ -343,9 +393,16 @@ class StatsResource(BaseResource):
 
             count = client.stats.new_memberships_sold("2026-01-01", "2026-01-31")
             print(f"New memberships sold: {count}")
+
+            # Exclude online (E-Comm) sign-ups
+            in_lane = client.stats.new_memberships_sold(
+                "2026-01-01", "2026-01-31", exclude_ecomm=True
+            )
         """
         transactions = self._fetch_transactions_v2(start, end)
-        return len(self._genuine_plan_sale_ids(transactions))
+        return len(
+            self._genuine_plan_sale_ids(transactions, exclude_ecomm=exclude_ecomm)
+        )
 
     def total_sales(
         self,
@@ -513,6 +570,8 @@ class StatsResource(BaseResource):
         self,
         start: str | datetime,
         end: str | datetime,
+        *,
+        exclude_ecomm: bool = False,
     ) -> ConversionResult:
         """Compute the membership conversion rate for a date range.
 
@@ -531,6 +590,13 @@ class StatsResource(BaseResource):
                 or :class:`~datetime.datetime`.
             end: Range end as an ISO-8601 string or
                 :class:`~datetime.datetime`.
+            exclude_ecomm: When ``True``, exclude E-Comm (online)
+                membership sales from the numerator.  These are sign-ups
+                whose ``salesDeviceName`` contains ``"E-Comm"`` — online
+                purchases that are not the result of in-lane conversion.
+                The denominator (eligible washes) is unchanged, since
+                E-Comm terminals do not perform in-lane car washes.
+                Defaults to ``False``.  Adds no extra API calls.
 
         Returns:
             A :class:`~sonnys_data_client.types.ConversionResult` containing
@@ -546,10 +612,17 @@ class StatsResource(BaseResource):
             print(f"Conversion rate: {result.rate:.1%}")
             print(f"Memberships: {result.new_memberships}")
             print(f"Eligible washes: {result.eligible_washes}")
+
+            # In-lane conversion only (exclude online sign-ups)
+            in_lane = client.stats.conversion_rate(
+                "2026-01-01", "2026-01-31", exclude_ecomm=True
+            )
         """
         washes = self.total_washes(start, end)
         v2_transactions = self._fetch_transactions_v2(start, end)
-        genuine_ids = self._genuine_plan_sale_ids(v2_transactions)
+        genuine_ids = self._genuine_plan_sale_ids(
+            v2_transactions, exclude_ecomm=exclude_ecomm
+        )
         new_memberships = len(genuine_ids)
         eligible_washes = washes.eligible_wash_count
 
@@ -667,6 +740,8 @@ class StatsResource(BaseResource):
         self,
         start: str | datetime,
         end: str | datetime,
+        *,
+        exclude_ecomm: bool = False,
     ) -> StatsReport:
         """Compute all KPIs for a date range in a single call.
 
@@ -687,6 +762,12 @@ class StatsResource(BaseResource):
                 or :class:`~datetime.datetime`.
             end: Range end as an ISO-8601 string or
                 :class:`~datetime.datetime`.
+            exclude_ecomm: When ``True``, exclude E-Comm (online)
+                membership sales from ``new_memberships`` and the
+                ``conversion`` KPI (any sign-up whose ``salesDeviceName``
+                contains ``"E-Comm"``).  The ``sales`` and ``washes``
+                breakdowns are unaffected.  Defaults to ``False``.  Adds
+                no extra API calls.
 
         Returns:
             A :class:`~sonnys_data_client.types.StatsReport` containing
@@ -715,7 +796,10 @@ class StatsResource(BaseResource):
             for t in self._fetch_transactions_by_type(start, end, "wash")
         }
         # Verify plan sales via v1 get() to exclude upgrades/switches
-        genuine_sale_ids = self._genuine_plan_sale_ids(v2_transactions)
+        # (and, when requested, E-Comm online sign-ups).
+        genuine_sale_ids = self._genuine_plan_sale_ids(
+            v2_transactions, exclude_ecomm=exclude_ecomm
+        )
         # Fetch clock entries for labor cost computation
         entries = self._fetch_all_clock_entries(start, end)
 
