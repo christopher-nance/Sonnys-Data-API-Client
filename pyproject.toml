@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sonnys-data-client"
-version = "1.6.0"
+version = "1.7.0"
 description = "Python client for the Sonny's Carwash Controls Data API"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -36,3 +36,4 @@ docs = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/sonnys_data_client"]
+

@@ -2,6 +2,34 @@
 
 All notable changes to `sonnys-data-client` are documented in this file.
 
+## 1.7.0
+
+### Fixed
+
+- **`load_job()` no longer crashes on an empty result.** When a site has no
+  transactions in the requested window the API returns
+  `{"status": "pass", "offset": null, "limit": null, "total": null}`.
+  `dict.get("total", default)` does not fall back when the key is present and
+  null, so `(total + limit - 1) // limit` raised
+  `TypeError: unsupported operand type(s) for +: 'NoneType' and 'int'`. Any
+  site/day with no sales killed the whole export. `load_job()` now returns `[]`.
+
+- **`RateLimiter.acquire()` is thread-safe.** It was a check-then-append race,
+  so threads sharing one client could exceed the window. All mutating paths
+  (`acquire`, `reset`, `available`) now hold a lock.
+
+- **A request that had to wait is now counted.** `_request()` sleeps for the
+  returned wait and then sends *without* calling `acquire()` again, so the
+  request was never recorded and the window drifted over budget.
+
+### Changed
+
+- **Default rate limit is now 18 requests / 15 s (was 20).** The server allows
+  exactly 20 — the 21st request in a window returns 429 — so targeting 20 left
+  no margin for clock skew or jitter and made 429s routine in sustained batch
+  use. A single-threaded two-day `load_job()` run produced 17 retry-backoff
+  events before this change. Pass `RateLimiter(max_requests=20)` explicitly to
+  restore the old behaviour.
 ## 1.6.0
 
 ### Added
@@ -116,3 +144,4 @@ All notable changes to `sonnys-data-client` are documented in this file.
   method on a client that was constructed without BackOffice
   credentials raises `BackOfficeCredentialsError` with a message
   naming the missing field(s).
+

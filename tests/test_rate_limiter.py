@@ -14,10 +14,15 @@ class TestRateLimiterConstructor:
     """Tests for RateLimiter constructor configuration."""
 
     def test_defaults(self) -> None:
-        """Default constructor uses 20 requests per 15-second window."""
+        """Default constructor uses 18 requests per 15-second window.
+
+        The server allows exactly 20 per 15s. Targeting 20 leaves no margin
+        for clock skew or network jitter, which made 429s routine in sustained
+        batch use; 18 keeps deliberate headroom.
+        """
         limiter = RateLimiter()
 
-        assert limiter._max_requests == 20
+        assert limiter._max_requests == 18
         assert limiter._window_seconds == 15.0
 
     def test_custom_values(self) -> None:
@@ -129,13 +134,13 @@ class TestAcquire:
         assert wait == 0.0
 
     @patch("sonnys_data_client._rate_limiter.time.monotonic")
-    def test_default_limit_21st_call_returns_positive(self, mock_monotonic) -> None:
-        """With default settings, 21st call returns positive wait time."""
+    def test_default_limit_19th_call_returns_positive(self, mock_monotonic) -> None:
+        """With default settings, the 19th call returns a positive wait."""
         mock_monotonic.return_value = 100.0
-        limiter = RateLimiter()  # 20 req / 15s
+        limiter = RateLimiter()  # 18 req / 15s, headroom under the server's 20
 
-        # 20 calls should all succeed
-        for _ in range(20):
+        # 18 calls should all succeed
+        for _ in range(18):
             assert limiter.acquire() == 0.0
 
         # 21st should return positive wait
