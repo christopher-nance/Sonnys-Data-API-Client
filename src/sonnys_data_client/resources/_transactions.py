@@ -212,7 +212,15 @@ class Transactions(ListableResource, GettableResource):
             status = body["status"]
 
             if status == "pass":
-                total = body.get("total", len(body["data"]))
+                # An empty result comes back as
+                # {"status": "pass", "offset": null, "limit": null,
+                #  "total": null} — dict.get's default does NOT apply when the
+                # key is present and null, so fall back explicitly. Without
+                # this, load_job() raises TypeError on any site/day with no
+                # transactions.
+                total = body.get("total")
+                if total is None:
+                    total = len(body["data"])
                 logger.debug(
                     "Job complete: hash=%s records=%d polls=%d",
                     hash_value, total, poll_count,

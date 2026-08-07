@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from collections import deque
 
@@ -21,12 +22,13 @@ class RateLimiter:
 
     def __init__(
         self,
-        max_requests: int = 20,
+        max_requests: int = 18,
         window_seconds: float = 15.0,
     ) -> None:
         self._max_requests = max_requests
         self._window_seconds = window_seconds
         self._timestamps: deque[float] = deque()
+        self._lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -50,24 +52,35 @@ class RateLimiter:
             float representing the number of seconds the caller should wait
             before retrying.
         """
-        now = time.monotonic()
-        self._purge(now)
+        with self._lock:
+            now = time.monotonic()
+            self._purge(now)
 
-        if len(self._timestamps) < self._max_requests:
-            self._timestamps.append(now)
-            return 0.0
+            if len(self._timestamps) < self._max_requests:
+                self._timestamps.append(now)
+                return 0.0
 
-        # At capacity -- calculate how long until the oldest entry expires.
-        wait = self._timestamps[0] + self._window_seconds - now
-        return wait
+            # At capacity -- calculate how long until the oldest entry expires.
+            wait = self._timestamps[0] + self._window_seconds - now
+            wait = max(wait, 0.0)
+            # Record the request at the moment it will actually be sent. The
+            # caller sleeps for `wait` and then sends without calling acquire()
+            # again, so without this the request is never counted and the
+            # window drifts over budget.
+            self._timestamps.append(now + wait)
+            return wait
 
     def reset(self) -> None:
         """Clear all recorded timestamps."""
-        self._timestamps.clear()
+        with self._lock:
+            self._timestamps.clear()
 
     @property
     def available(self) -> int:
         """Number of requests available in the current window."""
-        now = time.monotonic()
-        self._purge(now)
-        return self._max_requests - len(self._timestamps)
+        with self._lock:
+            now = time.monotonic()
+            self._purge(now)
+            return self._max_requests - len(self._timestamps)
+
+
