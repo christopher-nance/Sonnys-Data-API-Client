@@ -2,6 +2,23 @@
 
 All notable changes to `sonnys-data-client` are documented in this file.
 
+## 1.8.0
+
+### Added
+
+- **`report(include_labor=False)` skips the clock-entry fetch.** Clock entries
+  dominate `report()`'s cost: they are `1 + N_employees x ceil(days/14)`
+  requests against 2 bulk calls for everything else. For a single business
+  date at a 40-employee site that is roughly 43 requests, of which 41 are
+  labor. Callers that source labor elsewhere -- for example the Back Office
+  "Gross Daily Labor Costs" report -- can now skip it and issue 2.
+
+  `labor` and `cost_per_car` come back as `None` rather than zeroed results,
+  so a caller that forgets to check fails loudly instead of reading $0 of
+  labor as a real figure. `StatsReport.labor` and `StatsReport.cost_per_car`
+  are therefore now `Optional`; code that always reads them is unaffected,
+  because the default is still `include_labor=True`.
+
 ## 1.7.0
 
 ### Fixed
