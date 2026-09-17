@@ -135,20 +135,27 @@ class StatsReport(SonnysModel):
         conversion: Membership conversion rate KPI as a
             :class:`ConversionResult`.
         labor: Labor cost breakdown (regular/overtime costs and hours)
-            as a :class:`LaborCostResult`.
+            as a :class:`LaborCostResult`, or ``None`` when the report was
+            requested with ``include_labor=False``.
         cost_per_car: Labor cost per car KPI as a
-            :class:`CostPerCarResult`.
+            :class:`CostPerCarResult`, or ``None`` when the report was
+            requested with ``include_labor=False``.
         period_start: ISO-8601 date string for the start of the report
             range (e.g. ``"2026-01-01"``).
         period_end: ISO-8601 date string for the end of the report
             range (e.g. ``"2026-01-31"``).
+
+    Note:
+        ``labor`` and ``cost_per_car`` are ``None`` -- not zeroed -- when
+        labor was skipped, so a caller that forgets to check fails loudly
+        instead of silently reading $0 of labor as a real figure.
     """
 
     sales: SalesResult
     washes: WashResult
     new_memberships: int
     conversion: ConversionResult
-    labor: LaborCostResult
-    cost_per_car: CostPerCarResult
+    labor: LaborCostResult | None = None
+    cost_per_car: CostPerCarResult | None = None
     period_start: str
     period_end: str

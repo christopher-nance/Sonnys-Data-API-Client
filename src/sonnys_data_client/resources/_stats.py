@@ -742,6 +742,7 @@ class StatsResource(BaseResource):
         end: str | datetime,
         *,
         exclude_ecomm: bool = False,
+        include_labor: bool = True,
     ) -> StatsReport:
         """Compute all KPIs for a date range in a single call.
 
@@ -768,12 +769,22 @@ class StatsResource(BaseResource):
                 contains ``"E-Comm"``).  The ``sales`` and ``washes``
                 breakdowns are unaffected.  Defaults to ``False``.  Adds
                 no extra API calls.
+            include_labor: When ``False``, skip the clock-entry fetch and
+                return ``labor``/``cost_per_car`` as ``None``.  Clock
+                entries dominate this call's cost -- they are
+                ``1 + N_employees x ceil(days/14)`` requests against
+                **2 bulk calls** for everything else -- so for a single
+                business date with 40 employees this drops the report from
+                roughly 43 requests to 2.  Use it when labor is sourced
+                elsewhere (for example the Back Office "Gross Daily Labor
+                Costs" report).  Defaults to ``True``.
 
         Returns:
             A :class:`~sonnys_data_client.types.StatsReport` containing
             ``sales``, ``washes``, ``new_memberships``, ``conversion``,
             ``labor``, ``cost_per_car``, ``period_start``, and
-            ``period_end``.
+            ``period_end``.  ``labor`` and ``cost_per_car`` are ``None``
+            when ``include_labor=False``.
 
         Raises:
             ValueError: If *start* is after *end*, or if a string cannot
@@ -788,6 +799,14 @@ class StatsResource(BaseResource):
             print(f"Conversion: {rpt.conversion.rate:.1%}")
             print(f"Labor cost: ${rpt.labor.total_cost:.2f}")
             print(f"Cost per car: ${rpt.cost_per_car.cost_per_car:.2f}")
+
+        Example (labor sourced elsewhere)::
+
+            rpt = client.stats.report(
+                "2026-01-01", "2026-01-31", include_labor=False
+            )
+            print(f"Washes: {rpt.washes.total}")
+            assert rpt.labor is None
         """
         # --- 1. Fetch data (2 bulk transaction calls + ~N get() calls) ---
         v2_transactions = self._fetch_transactions_v2(start, end)
@@ -800,8 +819,11 @@ class StatsResource(BaseResource):
         genuine_sale_ids = self._genuine_plan_sale_ids(
             v2_transactions, exclude_ecomm=exclude_ecomm
         )
-        # Fetch clock entries for labor cost computation
-        entries = self._fetch_all_clock_entries(start, end)
+        # Fetch clock entries for labor cost computation. This is by far the
+        # most expensive part of the report -- N_employees x ceil(days/14)
+        # calls against 2 bulk calls for everything else -- so a caller that
+        # sources labor elsewhere can skip it entirely.
+        entries = self._fetch_all_clock_entries(start, end) if include_labor else []
 
         # --- 2. Single-pass classification ---
         recurring_plan_sales = 0.0
@@ -876,32 +898,39 @@ class StatsResource(BaseResource):
         )
 
         # --- 6. LaborCostResult (single-pass over clock entries) ---
-        regular_cost = overtime_cost = regular_hours = overtime_hours = 0.0
-        for entry in entries:
-            regular_cost += entry.regular_rate * entry.regular_hours
-            overtime_cost += entry.overtime_rate * entry.overtime_hours
-            regular_hours += entry.regular_hours
-            overtime_hours += entry.overtime_hours
-        labor_total_cost = regular_cost + overtime_cost
-        labor_total_hours = regular_hours + overtime_hours
+        # Left as None when labor was skipped, rather than a zeroed result: a
+        # caller reading $0 of labor as though it were real would silently
+        # corrupt any cost-per-car it derived.
+        labor: LaborCostResult | None = None
+        cpc: CostPerCarResult | None = None
 
-        labor = LaborCostResult(
-            total_cost=labor_total_cost,
-            regular_cost=regular_cost,
-            overtime_cost=overtime_cost,
-            regular_hours=regular_hours,
-            overtime_hours=overtime_hours,
-            total_hours=labor_total_hours,
-            entry_count=len(entries),
-        )
+        if include_labor:
+            regular_cost = overtime_cost = regular_hours = overtime_hours = 0.0
+            for entry in entries:
+                regular_cost += entry.regular_rate * entry.regular_hours
+                overtime_cost += entry.overtime_rate * entry.overtime_hours
+                regular_hours += entry.regular_hours
+                overtime_hours += entry.overtime_hours
+            labor_total_cost = regular_cost + overtime_cost
+            labor_total_hours = regular_hours + overtime_hours
 
-        # --- 7. CostPerCarResult ---
-        cpc_value = labor_total_cost / total_washes if total_washes > 0 else 0.0
-        cpc = CostPerCarResult(
-            cost_per_car=cpc_value,
-            total_labor_cost=labor_total_cost,
-            total_washes=total_washes,
-        )
+            labor = LaborCostResult(
+                total_cost=labor_total_cost,
+                regular_cost=regular_cost,
+                overtime_cost=overtime_cost,
+                regular_hours=regular_hours,
+                overtime_hours=overtime_hours,
+                total_hours=labor_total_hours,
+                entry_count=len(entries),
+            )
+
+            # --- 7. CostPerCarResult ---
+            cpc_value = labor_total_cost / total_washes if total_washes > 0 else 0.0
+            cpc = CostPerCarResult(
+                cost_per_car=cpc_value,
+                total_labor_cost=labor_total_cost,
+                total_washes=total_washes,
+            )
 
         # --- 8. Resolve period dates from original inputs ---
         period_start = start if isinstance(start, str) else start.date().isoformat()

@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from sonnys_data_client._client import SonnysClient
 from sonnys_data_client.resources._stats import StatsResource
 from sonnys_data_client.types._employees import ClockEntry, EmployeeListItem
@@ -323,3 +325,80 @@ class TestTotalLaborCost:
         assert result.entry_count == 1
 
         client.close()
+
+
+# ---------------------------------------------------------------------------
+# report(include_labor=False)
+# ---------------------------------------------------------------------------
+
+
+class TestReportIncludeLabor:
+    """Clock entries dominate report()'s cost: they are
+    ``1 + N_employees x ceil(days/14)`` requests against 2 bulk calls for
+    everything else. A caller that sources labor elsewhere (for instance the
+    Back Office "Gross Daily Labor Costs" report) can skip that entirely."""
+
+    @staticmethod
+    def _stats_with_no_transactions() -> StatsResource:
+        stats = StatsResource(_make_client())
+        stats._fetch_transactions_v2 = MagicMock(return_value=[])
+        stats._fetch_transactions_by_type = MagicMock(return_value=[])
+        stats._fetch_all_clock_entries = MagicMock(
+            return_value=[_make_clock_entry(regular_hours=8.0, regular_rate=15.0)]
+        )
+        return stats
+
+    def test_labor_is_included_by_default(self) -> None:
+        stats = self._stats_with_no_transactions()
+
+        report = stats.report("2026-01-15", "2026-01-15")
+
+        stats._fetch_all_clock_entries.assert_called_once()
+        assert isinstance(report.labor, LaborCostResult)
+        assert report.labor.total_cost == 120.0
+        assert report.cost_per_car is not None
+
+    def test_skipping_labor_avoids_the_clock_entry_fetch(self) -> None:
+        stats = self._stats_with_no_transactions()
+
+        report = stats.report("2026-01-15", "2026-01-15", include_labor=False)
+
+        stats._fetch_all_clock_entries.assert_not_called()
+        assert report.labor is None
+        assert report.cost_per_car is None
+
+    def test_skipping_labor_leaves_the_other_kpis_untouched(self) -> None:
+        stats = self._stats_with_no_transactions()
+
+        full = stats.report("2026-01-15", "2026-01-15")
+        without = stats.report("2026-01-15", "2026-01-15", include_labor=False)
+
+        assert without.sales == full.sales
+        assert without.washes == full.washes
+        assert without.conversion == full.conversion
+        assert without.new_memberships == full.new_memberships
+        assert without.period_start == full.period_start
+        assert without.period_end == full.period_end
+
+    def test_skipped_labor_is_none_rather_than_a_zeroed_result(self) -> None:
+        """A zeroed LaborCostResult would be indistinguishable from a real day
+        with no labor, so a caller that forgot to check would silently treat $0
+        as a genuine figure."""
+        stats = self._stats_with_no_transactions()
+
+        report = stats.report("2026-01-15", "2026-01-15", include_labor=False)
+
+        assert report.labor is None
+        with pytest.raises(AttributeError):
+            _ = report.labor.total_cost
+
+    def test_the_flag_composes_with_exclude_ecomm(self) -> None:
+        stats = self._stats_with_no_transactions()
+
+        report = stats.report(
+            "2026-01-15", "2026-01-15", exclude_ecomm=True, include_labor=False
+        )
+
+        stats._fetch_all_clock_entries.assert_not_called()
+        assert report.labor is None
+        assert report.conversion is not None
