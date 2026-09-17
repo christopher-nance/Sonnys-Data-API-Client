@@ -2,16 +2,35 @@
 
 All notable changes to `sonnys-data-client` are documented in this file.
 
+## 1.8.1
+
+### Fixed
+
+- **Corrected the request-count claim for `report(include_labor=False)`.** The
+  1.8.0 note said it takes a single-day report from ~43 requests to 2. That
+  double-counted the saving: `_genuine_plan_sale_ids()` issues one
+  `transactions.get()` per recurring-plan-sale candidate and runs regardless of
+  the flag, because conversion needs it. The flag removes the clock-entry
+  requests only. For a single business date at a 40-employee site with ~15
+  candidates it is roughly 58 requests down to 17. No behavior change; the
+  docstring, changelog and inline comment now say what the code does, and a
+  test pins that the detail calls still happen when labor is skipped.
+
 ## 1.8.0
 
 ### Added
 
 - **`report(include_labor=False)` skips the clock-entry fetch.** Clock entries
-  dominate `report()`'s cost: they are `1 + N_employees x ceil(days/14)`
-  requests against 2 bulk calls for everything else. For a single business
-  date at a 40-employee site that is roughly 43 requests, of which 41 are
-  labor. Callers that source labor elsewhere -- for example the Back Office
-  "Gross Daily Labor Costs" report -- can now skip it and issue 2.
+  are the largest single component of `report()`'s cost:
+  `1 + N_employees x ceil(days/14)` requests. Callers that source labor
+  elsewhere -- for example the Back Office "Gross Daily Labor Costs" report --
+  can now skip them.
+
+  It removes the clock-entry requests and nothing else. The 2 bulk transaction
+  calls and the per-candidate `transactions.get()` detail calls still happen,
+  because sales, washes and conversion need them. For a single business date
+  at a 40-employee site with the typical ~15 plan-sale candidates, that is
+  roughly 58 requests down to 17.
 
   `labor` and `cost_per_car` come back as `None` rather than zeroed results,
   so a caller that forgets to check fails loudly instead of reading $0 of

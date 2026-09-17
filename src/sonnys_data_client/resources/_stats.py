@@ -770,14 +770,16 @@ class StatsResource(BaseResource):
                 breakdowns are unaffected.  Defaults to ``False``.  Adds
                 no extra API calls.
             include_labor: When ``False``, skip the clock-entry fetch and
-                return ``labor``/``cost_per_car`` as ``None``.  Clock
-                entries dominate this call's cost -- they are
-                ``1 + N_employees x ceil(days/14)`` requests against
-                **2 bulk calls** for everything else -- so for a single
-                business date with 40 employees this drops the report from
-                roughly 43 requests to 2.  Use it when labor is sourced
-                elsewhere (for example the Back Office "Gross Daily Labor
-                Costs" report).  Defaults to ``True``.
+                return ``labor``/``cost_per_car`` as ``None``.  This removes
+                the ``1 + N_employees x ceil(days/14)`` clock-entry requests
+                and nothing else: the 2 bulk transaction calls and the
+                per-candidate ``transactions.get()`` detail calls described
+                above still happen, because sales, washes and conversion
+                need them.  For a single business date at a 40-employee
+                site with the typical ~15 plan-sale candidates, that is
+                roughly 58 requests down to 17.  Use it when labor is
+                sourced elsewhere (for example the Back Office "Gross Daily
+                Labor Costs" report).  Defaults to ``True``.
 
         Returns:
             A :class:`~sonnys_data_client.types.StatsReport` containing
@@ -819,10 +821,13 @@ class StatsResource(BaseResource):
         genuine_sale_ids = self._genuine_plan_sale_ids(
             v2_transactions, exclude_ecomm=exclude_ecomm
         )
-        # Fetch clock entries for labor cost computation. This is by far the
-        # most expensive part of the report -- N_employees x ceil(days/14)
-        # calls against 2 bulk calls for everything else -- so a caller that
-        # sources labor elsewhere can skip it entirely.
+        # Fetch clock entries for labor cost computation. This is the largest
+        # single component of the report's cost -- N_employees x ceil(days/14)
+        # calls -- so a caller that sources labor elsewhere can skip it. Note
+        # this is the only thing include_labor skips: the bulk transaction
+        # fetches above and the per-candidate detail calls in
+        # _genuine_plan_sale_ids are needed for sales/washes/conversion and
+        # still happen.
         entries = self._fetch_all_clock_entries(start, end) if include_labor else []
 
         # --- 2. Single-pass classification ---
