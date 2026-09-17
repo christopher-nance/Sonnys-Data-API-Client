@@ -402,3 +402,41 @@ class TestReportIncludeLabor:
         stats._fetch_all_clock_entries.assert_not_called()
         assert report.labor is None
         assert report.conversion is not None
+
+    def test_skipping_labor_does_not_skip_the_plan_sale_detail_calls(self) -> None:
+        """include_labor=False removes the clock-entry requests and nothing
+        else. _genuine_plan_sale_ids still issues one transactions.get() per
+        recurring-plan-sale candidate, because sales, washes and conversion
+        need them -- so the saving is the clock entries, not every request."""
+        from types import SimpleNamespace
+
+        from sonnys_data_client.types._transactions import TransactionV2ListItem
+
+        candidates = [
+            TransactionV2ListItem(
+                trans_number=int(n),
+                trans_id=f"{n}:1",
+                total=60.0,
+                date="2026-01-15",
+                customer_id=None,
+                is_recurring_plan_sale=True,
+                is_recurring_plan_redemption=False,
+                transaction_status="Completed",
+            )
+            for n in (100, 200, 300)
+        ]
+
+        stats = StatsResource(_make_client())
+        stats._fetch_transactions_v2 = MagicMock(return_value=candidates)
+        stats._fetch_transactions_by_type = MagicMock(return_value=[])
+        stats._fetch_all_clock_entries = MagicMock(return_value=[])
+        stats._client.transactions = MagicMock()
+        stats._client.transactions.get = MagicMock(
+            return_value=SimpleNamespace(is_recurring_sale=True, sales_device_name="Lane 1")
+        )
+
+        stats.report("2026-01-15", "2026-01-15", include_labor=False)
+
+        stats._fetch_all_clock_entries.assert_not_called()
+        # One detail call per candidate, exactly as with include_labor=True.
+        assert stats._client.transactions.get.call_count == len(candidates)
